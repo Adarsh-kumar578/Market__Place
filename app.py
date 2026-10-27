@@ -5,8 +5,8 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return '''
-        <h1>Marketplace V1: Add Seller - Register vendor</h1>
-        <form><input type="text" placeholder="Vendor Name"><button>Register</button></form>
+        <h1>Marketplace V2: Add Product - Upload items</h1>
+        <form><input type="text" placeholder="Product Name"><button>Upload</button></form>
     '''
 
 if __name__ == '__main__':

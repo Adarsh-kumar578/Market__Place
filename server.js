@@ -1,31 +1,53 @@
 
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const VERSION = process.env.VERSION || "v1";
 
-const versionNumber = Number(VERSION.replace("v", ""));
+const versionMatch = /^v([123])$/.exec(VERSION);
 
-if (![1, 2, 3].includes(versionNumber)) {
+if (!versionMatch) {
   throw new Error("VERSION must be v1, v2, or v3");
 }
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+const versionNumber = Number(versionMatch[1]);
 
-let nextSellerId = 1;
-let nextProductId = 1;
+// Shared data file used by all three local versions.
+const DATA_FILE = path.join(__dirname, "data.json");
 
-const sellers = [];
-const products = [];
+function ensureDataFile() {
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(
+      DATA_FILE,
+      JSON.stringify({ sellers: [], products: [] }, null, 2)
+    );
+  }
+}
 
-function requireVersion(requiredVersion, res) {
-  if (versionNumber < requiredVersion) {
+function readData() {
+  ensureDataFile();
+
+  const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+
+  return {
+    sellers: Array.isArray(data.sellers) ? data.sellers : [],
+    products: Array.isArray(data.products) ? data.products : []
+  };
+}
+
+function writeData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+// Enforce exactly one feature per version.
+function requireExactVersion(requiredVersion, res) {
+  if (versionNumber !== requiredVersion) {
     res.status(403).json({
-      error: `This feature is available in v${requiredVersion} and above`
+      error: `This endpoint is available only in v${requiredVersion}`
     });
     return false;
   }
@@ -33,7 +55,10 @@ function requireVersion(requiredVersion, res) {
   return true;
 }
 
-// Health check
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// Health check: available in every version.
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -42,8 +67,10 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Register a seller — v1, v2, v3
+// FEATURE 1: Register Seller — v1 only.
 app.post("/sellers", (req, res) => {
+  if (!requireExactVersion(1, res)) return;
+
   const { name, email, businessName } = req.body;
 
   if (
@@ -56,14 +83,17 @@ app.post("/sellers", (req, res) => {
     });
   }
 
+  const data = readData();
+
   const seller = {
-    id: nextSellerId++,
+    id: Math.max(0, ...data.sellers.map(s => s.id)) + 1,
     name: name.trim(),
     email: email.trim(),
     businessName: businessName.trim()
   };
 
-  sellers.push(seller);
+  data.sellers.push(seller);
+  writeData(data);
 
   res.status(201).json({
     message: "Seller registered successfully",
@@ -71,9 +101,9 @@ app.post("/sellers", (req, res) => {
   });
 });
 
-// Add a product — v2 and v3
+// FEATURE 2: Add Product — v2 only.
 app.post("/products", (req, res) => {
-  if (!requireVersion(2, res)) return;
+  if (!requireExactVersion(2, res)) return;
 
   const { sellerId, name, price, quantity } = req.body;
 
@@ -87,6 +117,9 @@ app.post("/products", (req, res) => {
     price === undefined ||
     !Number.isFinite(Number(price)) ||
     Number(price) < 0 ||
+    quantity === "" ||
+    quantity === null ||
+    quantity === undefined ||
     !Number.isInteger(Number(quantity)) ||
     Number(quantity) < 0
   ) {
@@ -95,18 +128,20 @@ app.post("/products", (req, res) => {
     });
   }
 
-  const seller = sellers.find(
+  const data = readData();
+
+  const seller = data.sellers.find(
     item => item.id === Number(sellerId)
   );
 
   if (!seller) {
     return res.status(404).json({
-      error: "Seller not found. Register the seller first."
+      error: "Seller not found. Register a seller in v1 first."
     });
   }
 
   const product = {
-    id: nextProductId++,
+    id: Math.max(0, ...data.products.map(p => p.id)) + 1,
     sellerId: seller.id,
     sellerName: seller.businessName,
     name: name.trim(),
@@ -114,7 +149,8 @@ app.post("/products", (req, res) => {
     quantity: Number(quantity)
   };
 
-  products.push(product);
+  data.products.push(product);
+  writeData(data);
 
   res.status(201).json({
     message: "Product added successfully",
@@ -122,17 +158,19 @@ app.post("/products", (req, res) => {
   });
 });
 
-// View all products — v3
+// FEATURE 3: View All Products — v3 only.
 app.get("/products", (req, res) => {
-  if (!requireVersion(3, res)) return;
+  if (!requireExactVersion(3, res)) return;
+
+  const data = readData();
 
   res.json({
-    count: products.length,
-    products
+    count: data.products.length,
+    products: data.products
   });
 });
 
-// Friendly response for unsupported routes
+// Unsupported endpoints.
 app.use((req, res) => {
   res.status(404).json({
     error: "Endpoint not found"
@@ -140,7 +178,5 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Marketplace ${VERSION} running on port ${PORT}`
-  );
+  console.log(`Marketplace ${VERSION} running on port ${PORT}`);
 });

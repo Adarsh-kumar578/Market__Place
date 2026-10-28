@@ -30,7 +30,7 @@
     }
 
     header p {
-      margin: 0;
+      margin: 6px 0;
     }
 
     main {
@@ -52,11 +52,13 @@
     }
 
     input {
+      display: block;
       width: 100%;
       padding: 12px;
       margin: 7px 0 13px;
       border: 1px solid #cbd2df;
       border-radius: 6px;
+      font-size: 15px;
     }
 
     button {
@@ -66,10 +68,16 @@
       color: white;
       border-radius: 6px;
       cursor: pointer;
+      font-size: 15px;
     }
 
     button:hover {
       background: #182850;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     .product {
@@ -85,6 +93,7 @@
       border-radius: 6px;
       display: none;
       background: #e3f4e8;
+      overflow-wrap: anywhere;
     }
 
     .muted {
@@ -95,6 +104,10 @@
       text-align: center;
       padding: 20px;
       color: #687386;
+    }
+
+    [hidden] {
+      display: none !important;
     }
   </style>
 </head>
@@ -108,20 +121,38 @@
   </header>
 
   <main>
-    <div id="message" role="status"></div>
+    <div id="message" role="status" aria-live="polite"></div>
 
-    <section class="card">
+    <!-- FEATURE 1: REGISTER SELLER - V1 ONLY -->
+    <section class="card" id="sellerSection" hidden>
       <h2>Register Seller</h2>
 
       <form id="sellerForm">
         <label for="sellerName">Seller Name</label>
-        <input id="sellerName" required>
+        <input
+          id="sellerName"
+          name="sellerName"
+          type="text"
+          autocomplete="name"
+          required
+        >
 
         <label for="sellerEmail">Email</label>
-        <input id="sellerEmail" type="email" required>
+        <input
+          id="sellerEmail"
+          name="sellerEmail"
+          type="email"
+          autocomplete="email"
+          required
+        >
 
         <label for="businessName">Business Name</label>
-        <input id="businessName" required>
+        <input
+          id="businessName"
+          name="businessName"
+          type="text"
+          required
+        >
 
         <button type="submit">Register Seller</button>
       </form>
@@ -129,30 +160,70 @@
       <p id="sellerResult" class="muted"></p>
     </section>
 
+    <!-- FEATURE 2: ADD PRODUCT - V2 ONLY -->
     <section class="card" id="addProductSection" hidden>
       <h2>Add Product</h2>
 
+      <p class="muted">
+        Enter the Seller ID created in Version 1.
+      </p>
+
       <form id="productForm">
         <label for="sellerId">Registered Seller ID</label>
-        <input id="sellerId" type="number" min="1" required>
+        <input
+          id="sellerId"
+          name="sellerId"
+          type="number"
+          min="1"
+          step="1"
+          required
+        >
 
         <label for="productName">Product Name</label>
-        <input id="productName" required>
+        <input
+          id="productName"
+          name="productName"
+          type="text"
+          required
+        >
 
         <label for="price">Price (₹)</label>
-        <input id="price" type="number" min="0" step="0.01" required>
+        <input
+          id="price"
+          name="price"
+          type="number"
+          min="0"
+          step="0.01"
+          required
+        >
 
         <label for="quantity">Quantity</label>
-        <input id="quantity" type="number" min="0" step="1" required>
+        <input
+          id="quantity"
+          name="quantity"
+          type="number"
+          min="0"
+          step="1"
+          required
+        >
 
         <button type="submit">Add Product</button>
       </form>
     </section>
 
+    <!-- FEATURE 3: VIEW PRODUCTS - V3 ONLY -->
     <section class="card" id="catalogSection" hidden>
       <h2>All Marketplace Products</h2>
-      <button id="refreshProducts">View All Products</button>
-      <div id="products"></div>
+
+      <p class="muted">
+        View the products registered in the marketplace.
+      </p>
+
+      <button type="button" id="refreshProducts">
+        View All Products
+      </button>
+
+      <div id="products" aria-live="polite"></div>
     </section>
   </main>
 
@@ -161,7 +232,7 @@
   </footer>
 
   <script>
-    let currentVersion = 1;
+    let currentVersion = 0;
 
     const message = document.getElementById("message");
 
@@ -169,10 +240,14 @@
       message.textContent = text;
       message.style.display = "block";
       message.style.background = isError ? "#fde8e8" : "#e3f4e8";
+      message.style.color = "#202938";
     }
 
     async function request(url, method = "GET", data) {
-      const options = { method, headers: {} };
+      const options = {
+        method,
+        headers: {}
+      };
 
       if (data !== undefined) {
         options.headers["Content-Type"] = "application/json";
@@ -180,7 +255,14 @@
       }
 
       const response = await fetch(url, options);
-      const result = await response.json();
+
+      let result;
+
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error("The server returned an invalid response.");
+      }
 
       if (!response.ok) {
         throw new Error(result.error || "Request failed");
@@ -189,81 +271,157 @@
       return result;
     }
 
+    // Show exactly one feature based on the server version.
     async function loadVersion() {
+      const sellerSection = document.getElementById("sellerSection");
+      const addProductSection =
+        document.getElementById("addProductSection");
+      const catalogSection =
+        document.getElementById("catalogSection");
+
+      // Hide every feature until the server version is confirmed.
+      sellerSection.hidden = true;
+      addProductSection.hidden = true;
+      catalogSection.hidden = true;
+
       try {
         const health = await request("/health");
-        currentVersion = Number(health.version.replace("v", ""));
+
+        const match = /^v([123])$/.exec(health.version);
+
+        if (!match) {
+          throw new Error("The server returned an unsupported version.");
+        }
+
+        currentVersion = Number(match[1]);
 
         document.getElementById("version").textContent =
           "Running Version: " + health.version;
 
-        document.getElementById("addProductSection").hidden =
-          currentVersion < 2;
-
-        document.getElementById("catalogSection").hidden =
-          currentVersion < 3;
+        if (currentVersion === 1) {
+          sellerSection.hidden = false;
+        } else if (currentVersion === 2) {
+          addProductSection.hidden = false;
+        } else if (currentVersion === 3) {
+          catalogSection.hidden = false;
+        }
       } catch (error) {
-        showMessage("Unable to connect to the server.", true);
+        currentVersion = 0;
+
+        document.getElementById("version").textContent =
+          "Version unavailable";
+
+        showMessage(
+          "Unable to connect to the server. Check that the correct " +
+          "Marketplace version is running.",
+          true
+        );
       }
     }
 
+    // FEATURE 1: Register a seller.
     document.getElementById("sellerForm").addEventListener(
       "submit",
       async event => {
         event.preventDefault();
 
+        if (currentVersion !== 1) {
+          showMessage(
+            "Seller registration is available only in v1.",
+            true
+          );
+          return;
+        }
+
+        const submitButton = event.submitter;
+        submitButton.disabled = true;
+
         try {
           const result = await request("/sellers", "POST", {
-            name: document.getElementById("sellerName").value,
-            email: document.getElementById("sellerEmail").value,
-            businessName: document.getElementById("businessName").value
+            name: document.getElementById("sellerName").value.trim(),
+            email: document.getElementById("sellerEmail").value.trim(),
+            businessName:
+              document.getElementById("businessName").value.trim()
           });
 
           document.getElementById("sellerResult").textContent =
             "Seller ID: " + result.seller.id +
             " | Business: " + result.seller.businessName;
 
-          document.getElementById("sellerId").value =
-            result.seller.id;
-
           showMessage(result.message);
           event.target.reset();
         } catch (error) {
           showMessage(error.message, true);
+        } finally {
+          submitButton.disabled = false;
         }
       }
     );
 
+    // FEATURE 2: Add a product.
     document.getElementById("productForm").addEventListener(
       "submit",
       async event => {
         event.preventDefault();
 
+        if (currentVersion !== 2) {
+          showMessage(
+            "Product creation is available only in v2.",
+            true
+          );
+          return;
+        }
+
+        const submitButton = event.submitter;
+        submitButton.disabled = true;
+
         try {
           const result = await request("/products", "POST", {
-            sellerId: Number(document.getElementById("sellerId").value),
-            name: document.getElementById("productName").value,
+            sellerId: Number(
+              document.getElementById("sellerId").value
+            ),
+            name: document.getElementById("productName").value.trim(),
             price: Number(document.getElementById("price").value),
-            quantity: Number(document.getElementById("quantity").value)
+            quantity: Number(
+              document.getElementById("quantity").value
+            )
           });
 
-          showMessage(result.message);
+          showMessage(
+            result.message + " Product ID: " + result.product.id
+          );
+
           event.target.reset();
         } catch (error) {
           showMessage(error.message, true);
+        } finally {
+          submitButton.disabled = false;
         }
       }
     );
 
+    // FEATURE 3: View all products.
     async function loadProducts() {
+      if (currentVersion !== 3) {
+        showMessage(
+          "Viewing products is available only in v3.",
+          true
+        );
+        return;
+      }
+
+      const button = document.getElementById("refreshProducts");
+      const container = document.getElementById("products");
+
+      button.disabled = true;
+      container.replaceChildren();
+
       try {
         const result = await request("/products");
-        const container = document.getElementById("products");
-
-        container.replaceChildren();
 
         if (result.products.length === 0) {
           container.textContent = "No products have been added yet.";
+          showMessage("No products found.");
           return;
         }
 
@@ -278,21 +436,27 @@
           details.textContent =
             "Product ID: " + product.id +
             " | Seller: " + product.sellerName +
-            " | Price: ₹" + product.price.toFixed(2) +
+            " | Price: ₹" + Number(product.price).toFixed(2) +
             " | Quantity: " + product.quantity;
 
           card.append(title, details);
           container.appendChild(card);
         });
+
+        showMessage("Products loaded: " + result.count);
       } catch (error) {
         showMessage(error.message, true);
+      } finally {
+        button.disabled = false;
       }
     }
 
     document.getElementById("refreshProducts").addEventListener(
-      "click", loadProducts
+      "click",
+      loadProducts
     );
 
+    // Detect the running version before displaying its feature.
     loadVersion();
   </script>
 </body>

@@ -1,0 +1,299 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace System - 24MIS0213</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f5f9;
+      color: #202938;
+    }
+
+    header {
+      background: #263a70;
+      color: white;
+      text-align: center;
+      padding: 24px 16px;
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+    }
+
+    header p {
+      margin: 0;
+    }
+
+    main {
+      width: min(950px, 92%);
+      margin: 24px auto;
+    }
+
+    .card {
+      background: white;
+      padding: 22px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 3px 12px #0000000d;
+    }
+
+    h2 {
+      margin-top: 0;
+      color: #263a70;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 7px 0 13px;
+      border: 1px solid #cbd2df;
+      border-radius: 6px;
+    }
+
+    button {
+      border: 0;
+      padding: 12px 18px;
+      background: #263a70;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #182850;
+    }
+
+    .product {
+      border: 1px solid #e0e5ef;
+      border-radius: 8px;
+      padding: 14px;
+      margin: 10px 0;
+    }
+
+    #message {
+      padding: 12px;
+      margin-bottom: 16px;
+      border-radius: 6px;
+      display: none;
+      background: #e3f4e8;
+    }
+
+    .muted {
+      color: #687386;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      color: #687386;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Marketplace System</h1>
+    <p>Seller Registration and Product Management</p>
+    <p>Registration Number: 24MIS0213</p>
+    <p id="version">Loading version...</p>
+  </header>
+
+  <main>
+    <div id="message" role="status"></div>
+
+    <section class="card">
+      <h2>Register Seller</h2>
+
+      <form id="sellerForm">
+        <label for="sellerName">Seller Name</label>
+        <input id="sellerName" required>
+
+        <label for="sellerEmail">Email</label>
+        <input id="sellerEmail" type="email" required>
+
+        <label for="businessName">Business Name</label>
+        <input id="businessName" required>
+
+        <button type="submit">Register Seller</button>
+      </form>
+
+      <p id="sellerResult" class="muted"></p>
+    </section>
+
+    <section class="card" id="addProductSection" hidden>
+      <h2>Add Product</h2>
+
+      <form id="productForm">
+        <label for="sellerId">Registered Seller ID</label>
+        <input id="sellerId" type="number" min="1" required>
+
+        <label for="productName">Product Name</label>
+        <input id="productName" required>
+
+        <label for="price">Price (₹)</label>
+        <input id="price" type="number" min="0" step="0.01" required>
+
+        <label for="quantity">Quantity</label>
+        <input id="quantity" type="number" min="0" step="1" required>
+
+        <button type="submit">Add Product</button>
+      </form>
+    </section>
+
+    <section class="card" id="catalogSection" hidden>
+      <h2>All Marketplace Products</h2>
+      <button id="refreshProducts">View All Products</button>
+      <div id="products"></div>
+    </section>
+  </main>
+
+  <footer>
+    Marketplace System | DevOps Project | 24MIS0213
+  </footer>
+
+  <script>
+    let currentVersion = 1;
+
+    const message = document.getElementById("message");
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.style.display = "block";
+      message.style.background = isError ? "#fde8e8" : "#e3f4e8";
+    }
+
+    async function request(url, method = "GET", data) {
+      const options = { method, headers: {} };
+
+      if (data !== undefined) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(data);
+      }
+
+      const response = await fetch(url, options);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Request failed");
+      }
+
+      return result;
+    }
+
+    async function loadVersion() {
+      try {
+        const health = await request("/health");
+        currentVersion = Number(health.version.replace("v", ""));
+
+        document.getElementById("version").textContent =
+          "Running Version: " + health.version;
+
+        document.getElementById("addProductSection").hidden =
+          currentVersion < 2;
+
+        document.getElementById("catalogSection").hidden =
+          currentVersion < 3;
+      } catch (error) {
+        showMessage("Unable to connect to the server.", true);
+      }
+    }
+
+    document.getElementById("sellerForm").addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
+
+        try {
+          const result = await request("/sellers", "POST", {
+            name: document.getElementById("sellerName").value,
+            email: document.getElementById("sellerEmail").value,
+            businessName: document.getElementById("businessName").value
+          });
+
+          document.getElementById("sellerResult").textContent =
+            "Seller ID: " + result.seller.id +
+            " | Business: " + result.seller.businessName;
+
+          document.getElementById("sellerId").value =
+            result.seller.id;
+
+          showMessage(result.message);
+          event.target.reset();
+        } catch (error) {
+          showMessage(error.message, true);
+        }
+      }
+    );
+
+    document.getElementById("productForm").addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
+
+        try {
+          const result = await request("/products", "POST", {
+            sellerId: Number(document.getElementById("sellerId").value),
+            name: document.getElementById("productName").value,
+            price: Number(document.getElementById("price").value),
+            quantity: Number(document.getElementById("quantity").value)
+          });
+
+          showMessage(result.message);
+          event.target.reset();
+        } catch (error) {
+          showMessage(error.message, true);
+        }
+      }
+    );
+
+    async function loadProducts() {
+      try {
+        const result = await request("/products");
+        const container = document.getElementById("products");
+
+        container.replaceChildren();
+
+        if (result.products.length === 0) {
+          container.textContent = "No products have been added yet.";
+          return;
+        }
+
+        result.products.forEach(product => {
+          const card = document.createElement("div");
+          card.className = "product";
+
+          const title = document.createElement("h3");
+          title.textContent = product.name;
+
+          const details = document.createElement("p");
+          details.textContent =
+            "Product ID: " + product.id +
+            " | Seller: " + product.sellerName +
+            " | Price: ₹" + product.price.toFixed(2) +
+            " | Quantity: " + product.quantity;
+
+          card.append(title, details);
+          container.appendChild(card);
+        });
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    }
+
+    document.getElementById("refreshProducts").addEventListener(
+      "click", loadProducts
+    );
+
+    loadVersion();
+  </script>
+</body>
+</html>

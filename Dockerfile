@@ -1,7 +1,17 @@
-FROM python:3.9-slim
+
+FROM node:20-alpine
+
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-EXPOSE 5000
-CMD ["python", "app.py"]
+
+COPY package*.json ./
+
+RUN npm install --omit=dev
+
+COPY server.js ./
+COPY public ./public
+
+ENV PORT=3000
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

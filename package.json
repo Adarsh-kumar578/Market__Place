@@ -1,0 +1,13 @@
+
+{
+  "name": "marketplace-system",
+  "version": "1.0.0",
+  "description": "Marketplace application for 24MIS0213 with Jenkins, Docker and Kubernetes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
